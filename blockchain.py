@@ -28,6 +28,7 @@ def load_data_using_json():
                         # decrytion hash error.
                         blockchain = json.loads( file_content[0][:-1] )
                         updated_blockchain = []
+
                         for block in blockchain:
                               updated_block = {
                                     'previous_hash' : block['previous_hash'],
@@ -111,8 +112,9 @@ def load_data():
                   
                   # Here we have to initialize the blockchain with OrderDict which is what we used in this program to avoid 
                   # decrytion hash error.
-                  blockchain = json.loads( file_content[0][:-1] )
+                  blockchain = json.loads( file_content[0][:-1] ) # -1 because we want to avoid last new line character
                   updated_blockchain = []
+
                   for block in blockchain:
                         
                         input_transactions = [ OrderedDict( [ ('sender', tx['sender']), 
@@ -144,11 +146,11 @@ def load_data():
 
                   open_transactions = updated_transaction
 
-      except IOError:
+      except (IOError, IndexError):
             print('ERROR:: File not found, initializing the data manually...')
             genesis_block = Block( 0, '', [], 100, 0 )
             blockchain = [ genesis_block ]
-            
+            open_transactions = []
       finally:
             print( 'This block will be executed all the times...' )
 
@@ -156,11 +158,14 @@ def load_data():
 load_data()
 
 def save_data():
+
       with open( 'blockchain.txt' , mode='w' ) as f:
-            f.write( json.dumps( blockchain ) )
+            # JSON cannot serialize object, so convert the same into directory
+            chained_block = [ block.__dict__ for block in blockchain ]
+            f.write( json.dumps( chained_block ) )
             f.write( '\n' )
             f.write( json.dumps( open_transactions ) )
-            
+
 
 def save_data_using_pickel():
       with open( 'blockchain.p', mode='wb' ) as f:
@@ -190,7 +195,7 @@ def get_user_input():
 def print_blockchain():
       # Print the blockchain data
       for block in blockchain:
-            print('Block chain value : ' , block )
+            print('Block chain value : ' , block.__dict__ )
       else:
             print('-' * 30)
 
@@ -245,12 +250,12 @@ def verify_blockchain():
             if( index == 0 ):
                   continue
             # Verify if the previous hash is equal to manually cancluated previous value hash
-            if( block[ 'previous_hash' ] != hash_block( blockchain[index-1] ) ):
+            if( block.previous_hash != hash_block( blockchain[index-1] ) ):
                   return False
             
             # Verify valid proof of work, also make sure you pass the tranasctions without reward transaction, 
             # as we have not added the same while mining blocks, that is why -1 in below code.
-            if not valid_proof( block['transactions'][:-1], block['previous_hash'], block['proof'] ):
+            if not valid_proof( block.transactions[:-1], block.previous_hash, block.proof ):
                   print( '------------- Proof of work is Invalid --------------' )
                   return False
       return True
@@ -295,22 +300,22 @@ def mine_block():
       #open_transactions.append( reward_transaction )
       copied_transactions.append( reward_transaction )
 
-      block = {
-            'previous_hash' : hashed_block,
-            'index' : len(blockchain),
-            'transactions' : copied_transactions,
-            'proof': proof
-      }
+      block = Block( len(blockchain), hashed_block, copied_transactions, proof )
+       
       blockchain.append( block )
+      
       print( 'Blockchain after mining : ' , blockchain )
 
       return True
 
 
 def get_balance( participant ):
+
       print( 'Getting balance for ' , participant )
 
-      sender_data = [ [ tx['amount'] for tx in block['transactions'] if tx['sender'] == participant ] for block in blockchain ]
+      print_blockchain( )
+
+      sender_data = [ [ tx['amount'] for tx in block.transactions if tx['sender'] == participant ] for block in blockchain ]
       print( 'Sender amount : ', sender_data )
       # We need to check for the amount spent in open tranasctions too
       open_sender_data = [ opendata['amount'] for opendata in open_transactions if opendata['sender'] == participant ]
@@ -333,7 +338,7 @@ def get_balance( participant ):
       #                   print('amount_tobe_sent (after) = ', amount_tobe_sent )
 
 
-      reciever_data = [ [ tx['amount'] for tx in block['transactions'] if tx['reciepient'] == participant ] for block in blockchain ]
+      reciever_data = [ [ tx['amount'] for tx in block.transactions if tx['reciepient'] == participant ] for block in blockchain ]
 
       amount_received = 0
       amount_received = functools.reduce( lambda tx_sum, tx_amt: tx_sum + sum(tx_amt) if len(tx_amt) > 0 else tx_sum + 0 , reciever_data, 0 )
