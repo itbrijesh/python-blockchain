@@ -15,6 +15,16 @@ def hash_block( block ):
      # So it is safe to first make a copy before we use.
       
      upd_block = block.__dict__.copy()
+
+     print( 'In Hashing i want to print transactions...' )
+     for tx in upd_block['transactions']:
+           print( tx.to_ordered_dict() )
+      
+     # Here transactions inside block are still type of object so we again have to make it OrderedDict other hasing will fail
+     upd_block['transactions'] = [ tx.to_ordered_dict() for tx in upd_block['transactions'] ]
+
+     print( 'upd_block>>>>> ' , upd_block )
+
      inputv =  json.dumps( upd_block, sort_keys=True ).encode()
      
      return hash_string_sha256(inputv)
