@@ -3,20 +3,23 @@ from hash_util import hash_block, hash_string_sha256
 
 class Verification:
 
-      def verify_transactions( self, open_transactions, get_balance ):
-            return all( [self.verify_transaction(tx, get_balance) for tx in open_transactions] )
+      @classmethod
+      def verify_transactions( cls, open_transactions, get_balance ):
+            return all( [ cls.verify_transaction(tx, get_balance) for tx in open_transactions] )
 
       #This function will verify the transaction if sender has enough money to send.
       #It will pull the sender from the transaction and will check her balance
-      def verify_transaction( self, transaction, get_balance ):
+      @classmethod
+      def verify_transaction( cls, transaction, get_balance ):
       
-            balance = get_balance( transaction.sender )
+            balance = get_balance()
 
             print( 'In Verify transaction, balance = ', balance , ' New Transaction amount = ', transaction.amount )
             return balance >= transaction.amount
 
 
-      def verify_blockchain( self, blockchain ):
+      @classmethod
+      def verify_blockchain( cls, blockchain ):
             """ Verify current blockchain and return True otherwise False """
 
             print( '+' * 100 )
@@ -30,13 +33,14 @@ class Verification:
                   
                   # Verify valid proof of work, also make sure you pass the tranasctions without reward transaction, 
                   # as we have not added the same while mining blocks, that is why -1 in below code.
-                  if not self.valid_proof( block.transactions[:-1], block.previous_hash, block.proof ):
+                  if not cls.valid_proof( block.transactions[:-1], block.previous_hash, block.proof ):
                         print( '>>>>>>>>>>>>>>>>>>>>...------------- Proof of work is Invalid --------------...<<<<<<<<<<<<<<<<<<<<<<<<<<<<<' )
                         return False
             return True
 
       
-      def valid_proof( self, transactions, last_hash, proof ):
+      @staticmethod
+      def valid_proof( transactions, last_hash, proof ):
             """Validate a proof of work number and see if it solves the puzzle algorithm (two leading 0s)
 
             Arguments:

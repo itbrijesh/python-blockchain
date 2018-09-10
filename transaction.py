@@ -12,3 +12,5 @@ class Transaction(Printable):
             return OrderedDict( [ ('sender', self.sender), 
                                     ('recipient', self.recipient), 
                                     ('amount', self.amount) ] )
+
+       
