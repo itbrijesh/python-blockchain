@@ -62,7 +62,11 @@ class Node:
                         
                         recipient, amount = tx_details
 
-                        if self.blockchain.add_transaction( recipient, self.wallet.public_key, amount=amount ) :
+                        # Generate and send the signature along with the transaction
+                        # Signature will be generated only for sender, reciever and amount with private key
+                        signature = self.wallet.sign_transaction( self.wallet.public_key, recipient, amount )
+
+                        if self.blockchain.add_transaction( recipient, self.wallet.public_key, amount, signature ) :
                               print('!!!!!!!!!!     Transaction has been added successfully      !!!!!!!!!')
                         else:
                               print('!!!!!!!!!!!!!!!!!!!!!!!!!! Transaction failed !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')

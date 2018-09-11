@@ -1,21 +1,27 @@
 
 from utility.hash_util import hash_block, hash_string_sha256
+from wallet import Wallet
 
 class Verification:
 
+      # We need to verify each transaction for any security thret and signature will help us here a lot.
       @classmethod
       def verify_transactions( cls, open_transactions, get_balance ):
-            return all( [ cls.verify_transaction(tx, get_balance) for tx in open_transactions] )
+            return all( [ cls.verify_transaction( tx, get_balance, False ) for tx in open_transactions] )
 
       #This function will verify the transaction if sender has enough money to send.
       #It will pull the sender from the transaction and will check her balance
       @classmethod
-      def verify_transaction( cls, transaction, get_balance ):
+      def verify_transaction( cls, transaction, get_balance, funds_check=True ):
       
             balance = get_balance()
 
             print( 'In Verify transaction, balance = ', balance , ' New Transaction amount = ', transaction.amount )
-            return balance >= transaction.amount
+            
+            if funds_check:
+                  return balance >= transaction.amount and Wallet.verify_signature( transaction )
+            else:
+                  return Wallet.verify_signature( transaction )
 
 
       @classmethod

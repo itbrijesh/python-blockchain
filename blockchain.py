@@ -8,7 +8,7 @@ from transaction import Transaction
 from utility.hash_util import hash_block
 from utility.hash_util import hash_string_sha256
 from collections import OrderedDict
-
+from wallet import Wallet
 
 open_transactions = []
 owner = 'Brijesh'
@@ -53,7 +53,7 @@ class Blockchain:
                         # Here block is directory object but not the Block object because we are reading from file.  :)
                         for block in blockchain:
                               
-                              input_transactions = [ Transaction( tx['sender'], tx['recipient'], tx['amount'] )  for tx in block['transactions'] ]
+                              input_transactions = [ Transaction( tx['sender'], tx['recipient'], tx['amount'], tx['signature'] )  for tx in block['transactions'] ]
 
                               updated_block = Block(  block['index'], 
                                                       block['previous_hash'], 
@@ -74,7 +74,7 @@ class Blockchain:
 
                         for tx in self.__open_transactions:
                               updated_transaction.append(
-                                    Transaction( tx['sender'], tx['recipient'], tx['amount'] )
+                                    Transaction( tx['sender'], tx['recipient'], tx['amount'], tx['signature'] )
                               )
 
                         self.__open_transactions = updated_transaction
@@ -115,14 +115,14 @@ class Blockchain:
                   return self.__chain[-1]
 
       
-      def add_transaction( self, recipient, sender, amount=1.0 ):
+      def add_transaction( self, recipient, sender, amount, signature ):
       
             if sender == None:
                   print( 'Sender is invalid, Did you generated Wallet?' )
                   return False
 
             #transaction = { 'sender':sender, 'recipient': recipient, 'amount':amount }
-            transaction = Transaction( sender, recipient, amount )
+            transaction = Transaction( sender, recipient, amount, signature )
             
             if Verification.verify_transaction( transaction, self.get_balance ) :
                   self.__open_transactions.append( transaction )
@@ -160,7 +160,13 @@ class Blockchain:
 
             copied_transactions = self.__open_transactions[:]
 
-            reward_transaction = Transaction( 'MINNER', self.hosting_node_id, MINING_REWARDS )
+            # Verify for the signature mismatch before you mine the block.
+            for tx in copied_transactions:
+                  if not Wallet.verify_signature( tx ):
+                        print( 'ERRPR:::Cannot mine the block as Signature is not matching...!!!' )
+                        return False
+
+            reward_transaction = Transaction( 'MINNER', self.hosting_node_id, MINING_REWARDS, '' )
             copied_transactions.append( reward_transaction )
 
             block = Block( len( self.__chain ), hashed_block, copied_transactions, proof )
