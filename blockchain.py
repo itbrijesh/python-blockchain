@@ -2,11 +2,11 @@ import functools
 import hashlib
 import json
 import pickle
-from verification import Verification
+from utility.verification import Verification
 from block import Block
 from transaction import Transaction
-from hash_util import hash_block
-from hash_util import hash_string_sha256
+from utility.hash_util import hash_block
+from utility.hash_util import hash_string_sha256
 from collections import OrderedDict
 
 
@@ -98,8 +98,10 @@ class Blockchain:
                   f.write(json.dumps(saveable_chain))
                   f.write('\n')
                   
-                  saveable_tx = [tx.__dict__ for tx in open_transactions]
+                  saveable_tx = [tx.__dict__ for tx in self.__open_transactions]
                   f.write(json.dumps(saveable_tx))
+
+                  print('Open transactions has been stored in a file blockchain.txt...')
 
       def add_value( self, trans_amount ):
             self.__chain.append( [ self.get_last_transaction(), trans_amount ] )
@@ -115,11 +117,14 @@ class Blockchain:
       
       def add_transaction( self, recipient, sender, amount=1.0 ):
       
+            if sender == None:
+                  print( 'Sender is invalid, Did you generated Wallet?' )
+                  return False
+
             #transaction = { 'sender':sender, 'recipient': recipient, 'amount':amount }
             transaction = Transaction( sender, recipient, amount )
             
             if Verification.verify_transaction( transaction, self.get_balance ) :
-                  
                   self.__open_transactions.append( transaction )
                   # Saving the data in a file.
                   self.save_data()
@@ -142,6 +147,11 @@ class Blockchain:
 
       def mine_block( self ):
       
+            if self.hosting_node_id == None:
+                  print( 'Cannot mine the block for invalid sender, Did you generated Wallet? ' )
+                  return False
+
+
             last_block = self.__chain[-1]
             hashed_block = hash_block( last_block )
 

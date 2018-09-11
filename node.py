@@ -1,14 +1,16 @@
 from uuid import uuid4
-from verification import Verification
+from utility.verification import Verification
 from blockchain import Blockchain
+from wallet import Wallet
 
 class Node:
 
       def __init__( self ):
-
             # Unique sender/ID
-            self.node_id = str( uuid4() )
-            self.blockchain = Blockchain( self.node_id )
+            #self.node_id = str( uuid4() ) # We used temporarily only when we had no public/private keys
+            self.wallet = Wallet()
+            #self.blockchain = Blockchain( self.node_id )
+            self.blockchain = None
 
 
       def get_user_input( self ):
@@ -45,6 +47,9 @@ class Node:
                   #print('5  Print Participants.' )
                   print('6. Print Open Transactions.')
                   print('7. Verify all Transactions.')
+                  print('8. Create Wallet.')
+                  print('9. Save keys in Wallet.')
+                  print('10. Load Wallet.')
                   print('q. Quit')
 
                   choice = input('Enter your choice : ')
@@ -57,7 +62,7 @@ class Node:
                         
                         recipient, amount = tx_details
 
-                        if self.blockchain.add_transaction( recipient, self.node_id, amount=amount ) :
+                        if self.blockchain.add_transaction( recipient, self.wallet.public_key, amount=amount ) :
                               print('!!!!!!!!!!     Transaction has been added successfully      !!!!!!!!!')
                         else:
                               print('!!!!!!!!!!!!!!!!!!!!!!!!!! Transaction failed !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
@@ -88,14 +93,35 @@ class Node:
 
                   # 6. Print Open Transactions.
                   elif( choice == '6' ):
-                        print( ( tx for tx in self.blockchain.get_open_transactions() ) )
-
+                        print('-' * 100)
+                        print('Open Transactions are,')
+                        for tx in self.blockchain.get_open_transactions():
+                              print( tx )
+                        print('-'*100)
+                        
                   # 7. Verify all Transactions.
                   elif( choice == '7' ):
                         if Verification.verify_transactions( self.blockchain.get_open_transactions(), self.blockchain.get_balance ):
                               print('All transactions are valid....')
                         else:
                               print('---------- Few of the transactions are not valid --------------')
+
+                  # 8. Create Wallet (public/private keys)
+                  elif choice == '8':
+                        self.wallet.create_keys()
+                        # Reinitiallze the blockchain objects with newly generated keys.
+                        self.blockchain = Blockchain( self.wallet.public_key )
+
+                  # 9. Save Wallet in a file.
+                  elif choice == '9':
+                        self.wallet.save_keys()
+                        # Reinitiallze the blockchain objects with newly generated keys.
+                        self.blockchain = Blockchain( self.wallet.public_key )
+
+                  # 10. Load public/private keys from file
+                  elif choice == '10':
+                        self.wallet.load_keys()
+                        self.blockchain = Blockchain( self.wallet.public_key )
 
                   elif( choice == 'q' ):
                         waiting_for_input = False
@@ -110,12 +136,14 @@ class Node:
 
                   print('-' * 100 )
                   print('Calculation balance....' )
-                  print('Balance of {} is {:6.2f} : '.format( self.node_id, self.blockchain.get_balance() ) )
+                  print('Balance of {} is {:6.2f} : '.format( self.wallet.public_key, self.blockchain.get_balance() ) )
                   print('-' * 100 )
                   
             else:
                   print('User left!')
 
 
-node = Node()
-node.listening_for_input()           
+if __name__ == '__main__':
+      node = Node()
+      node.listening_for_input()
+      
