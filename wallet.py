@@ -1,8 +1,11 @@
 from Crypto.PublicKey import RSA
 from Crypto.Hash import SHA256
 from Crypto.Signature import PKCS1_v1_5
+
 import Crypto.Random 
 import binascii
+
+from error import Error
 
 class Wallet:
 
@@ -25,8 +28,16 @@ class Wallet:
                               f.write( self.public_key )
                               f.write( '\n' )
                               f.write( self.private_key ) 
+                        
+                        return True
+
                   except(IOError, IndexError):
                         print('ERROR:::Error saving a wallet file...')
+                        
+                        error = Error()
+                        error.message = 'Error saving a wallet file.'
+                        error.code = 'FILE_SAVE_ERROR'
+                        return error
 
 
       def load_keys( self ):
@@ -37,8 +48,16 @@ class Wallet:
                         self.public_key = keys[0][:-1]
                         self.private_key = keys[1]
 
+                  return True
+
             except( IOError, IndexError ):
                   print( 'ERROR:::Error reading wallet file !!!' )
+
+                  error = Error()
+                  error.message = 'Error loading a wallet file.'
+                  error.code = 'FILE_LOAD_ERROR'
+
+                  return error
             
 
       def generate_keys( self ):

@@ -9,6 +9,7 @@ from utility.hash_util import hash_block
 from utility.hash_util import hash_string_sha256
 from collections import OrderedDict
 from wallet import Wallet
+from error import Error
 
 open_transactions = []
 owner = 'Brijesh'
@@ -119,7 +120,11 @@ class Blockchain:
       
             if sender == None:
                   print( 'Sender is invalid, Did you generated Wallet?' )
-                  return False
+
+                  error = Error()
+                  error.code = 400
+                  error.message =  'Sender is invalid, Did you generated Wallet?'
+                  return error
 
             #transaction = { 'sender':sender, 'recipient': recipient, 'amount':amount }
             transaction = Transaction( sender, recipient, amount, signature )
@@ -129,6 +134,11 @@ class Blockchain:
                   # Saving the data in a file.
                   self.save_data()
                   return True
+            else:
+                  error = Error()
+                  error.code = 500
+                  error.message = 'Transaction verification failed !'
+                  return error
 
             return False
 
@@ -149,7 +159,11 @@ class Blockchain:
       
             if self.hosting_node_id == None:
                   print( 'Cannot mine the block for invalid sender, Did you generated Wallet? ' )
-                  return False
+
+                  error = Error()
+                  error.message= 'Cannot mine the block for invalid sender, Did you generated Wallet?'
+                  error.code= 'MINE_MISSING_WALLET'
+                  return error
 
 
             last_block = self.__chain[-1]
@@ -164,7 +178,12 @@ class Blockchain:
             for tx in copied_transactions:
                   if not Wallet.verify_signature( tx ):
                         print( 'ERRPR:::Cannot mine the block as Signature is not matching...!!!' )
-                        return False
+                        
+                        error = Error()
+                        error.message= 'Cannot mine the block as Signature is not matching...!!!'
+                        error.code= 'MINE_MISSING_SIGNATURE'
+                        return error
+
 
             reward_transaction = Transaction( 'MINNER', self.hosting_node_id, MINING_REWARDS, '' )
             copied_transactions.append( reward_transaction )
@@ -184,10 +203,17 @@ class Blockchain:
             # Save data in a file.
             self.save_data()
 
-            return True
+            #return True
+            return block
 
 
       def get_balance( self ):
+
+            if self.hosting_node_id == None:
+                  error = Error()
+                  error.message = 'Invalid public_key (sender)'
+                  error.code = 'INVALID_SENDER'
+                  return error
 
             participant = self.hosting_node_id
             print( 'Getting balance for ' , participant )
