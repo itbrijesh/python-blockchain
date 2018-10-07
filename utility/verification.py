@@ -14,7 +14,7 @@ class Verification:
       @classmethod
       def verify_transaction( cls, transaction, get_balance, funds_check=True ):
       
-            balance = get_balance()
+            balance = get_balance( transaction.sender )
 
             print( 'In Verify transaction, balance = ', balance , ' New Transaction amount = ', transaction.amount )
             

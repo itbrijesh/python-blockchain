@@ -9,9 +9,10 @@ from error import Error
 
 class Wallet:
 
-      def __init__( self ):
+      def __init__( self, port ):
             self.private_key = None
             self.public_key = None
+            self.__port = port 
             
             
       def create_keys( self ):
@@ -24,7 +25,7 @@ class Wallet:
 
             if self.private_key != None and self.public_key != None:
                   try:
-                        with open( 'wallet.txt', 'w') as f:
+                        with open( 'wallet-{}.txt'.format( self.__port ), 'w') as f:
                               f.write( self.public_key )
                               f.write( '\n' )
                               f.write( self.private_key ) 
@@ -43,7 +44,7 @@ class Wallet:
       def load_keys( self ):
 
             try:
-                  with open( 'wallet.txt', 'r' ) as f:
+                  with open( 'wallet-{}.txt'.format( self.__port ), 'r' ) as f:
                         keys = f.readlines()
                         self.public_key = keys[0][:-1]
                         self.private_key = keys[1]

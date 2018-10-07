@@ -10,6 +10,7 @@ from utility.hash_util import hash_string_sha256
 from collections import OrderedDict
 from wallet import Wallet
 from error import Error
+import requests
 
 open_transactions = []
 owner = 'Brijesh'
@@ -20,11 +21,14 @@ MINING_REWARDS = 10
 class Blockchain:
 
       # Constructor method
-      def __init__( self, hosting_node_id ):
+      def __init__( self, hosting_node_id, port ):
 
             genesis_block = Block( 0, '', [], 100, 0 )
+            self.__port = port
             self.__chain = [ genesis_block ]
             self.__open_transactions = []
+            self.__peer_nodes = set()
+            self.resolve_conflicts = False
 
             # Load the file data during the start of program to start from where we left
             self.load_data()
@@ -42,7 +46,7 @@ class Blockchain:
       def load_data( self ):
             
             try:
-                  with open( 'blockchain.txt', mode ='r' ) as f:
+                  with open( 'blockchain-{}.txt'.format( self.__port ), mode ='r' ) as f:
                         file_content = f.readlines()
                         
                         # Here we have to initialize the blockchain with OrderDict which is what we used in this program to avoid 
@@ -69,7 +73,7 @@ class Blockchain:
                         # Here we have to initialize the open transactions with OrderDict which is what we used in this program to avoid 
                         # decrytion hash error.
                         
-                        self.__open_transactions = json.loads( file_content[1] )
+                        self.__open_transactions = json.loads( file_content[1][:-1] ) # -1 because we want to avoid last new line character
                         
                         updated_transaction = []
 
@@ -80,6 +84,10 @@ class Blockchain:
 
                         self.__open_transactions = updated_transaction
 
+                        # Populating peer nodes from blockchain.txt file
+                        
+                        self.__peer_nodes = set(json.loads( file_content[2] )) # convert back to set object
+
             except (IOError, IndexError):
                   print('ERROR:: File not found, initializing the data manually...')
 
@@ -89,7 +97,7 @@ class Blockchain:
 
       def save_data( self ):
 
-            with open( 'blockchain.txt' , mode='w' ) as f:
+            with open( 'blockchain-{}.txt'.format( self.__port ) , mode='w' ) as f:
                   # JSON cannot serialize object, so convert the same into directory
                   # We have to convert each sub object ( i.e transactions ) into directory/str.
                   # So first we did block for block in blockchain   and then,
@@ -104,6 +112,9 @@ class Blockchain:
 
                   print('Open transactions has been stored in a file blockchain.txt...')
 
+                  f.write( '\n' )
+                  f.write( json.dumps( list(self.__peer_nodes) ) )
+
       def add_value( self, trans_amount ):
             self.__chain.append( [ self.get_last_transaction(), trans_amount ] )
              
@@ -116,11 +127,11 @@ class Blockchain:
                   return self.__chain[-1]
 
       
-      def add_transaction( self, recipient, sender, amount, signature ):
+      # This method will keep saving new/ope transactions in a file so that can be retrived later if there is no mining done yet.
+      def add_transaction( self, recipient, sender, amount, signature, is_receiving=False ):
       
             if sender == None:
                   print( 'Sender is invalid, Did you generated Wallet?' )
-
                   error = Error()
                   error.code = 400
                   error.message =  'Sender is invalid, Did you generated Wallet?'
@@ -130,9 +141,29 @@ class Blockchain:
             transaction = Transaction( sender, recipient, amount, signature )
             
             if Verification.verify_transaction( transaction, self.get_balance ) :
+                  
+                  # We have to broadcast this transction to other nodes so they can get update their own version of blockchain
+                  if not is_receiving:
+                        for node in self.__peer_nodes:
+                              url = 'http://{}/broadcast_transaction'.format(node)
+                              print( 'Broadcasting transaction on ==> ', url )
+
+                              try:
+                                    response = requests.post( url, json={ 'sender': sender, 'recipient' : recipient, 'amount' : amount, 'signature' : signature  } )
+
+                                    if response.status_code == 400 or response.status_code == 500:
+                                          print( 'Broadcasting transaction declined ! Need to resolve...')
+                                          return Error.get_error_object( '500', 'Broadcasting transaction declined ! Need to resolve...' )
+
+                              except requests.exceptions.ConnectionError:
+                                    print( 'ERROR:::Connections issue while broading transction for the node ', node )
+                                    continue
+
                   self.__open_transactions.append( transaction )
                   # Saving the data in a file.
                   self.save_data()
+                  
+                  print( 'New/Open Transaction added successfully...' )
                   return True
             else:
                   error = Error()
@@ -155,8 +186,50 @@ class Blockchain:
             return proof
 
 
+      def resolve( self ):
+
+            winner_chain = self.__chain
+            replaced = False
+
+            for node in self.__peer_nodes:
+                  
+                  try:
+                        url = 'http://{}/chain'.format( node )
+
+                        response = requests.get( url )
+
+                        node_chain = response.json()
+
+                        node_chain = [ Block( block['index'], block['previous_hash'], 
+                                          [ Transaction( tx['sender'], tx['recipient'], tx['amount'], tx['signature']) for 
+                                                      tx in block['transactions'] ],
+                                          block[ 'proof' ],
+                                          block['timestamp']
+                                          ) for block in node_chain ]
+                        
+                        if len( node_chain ) > len( winner_chain ) and Verification.verify_blockchain( node_chain ):
+                              winner_chain = node_chain
+                              replaced = True
+                  except ConnectionError:
+                        print('Connection error occured while connection chain REST api from resolve()...')
+
+            self.__chain = winner_chain
+            self.resolve_conflicts = False
+
+            if replaced:
+                  self.__open_transactions = []
+                  print( 'Chain has been replaced !') 
+
+            self.save_data()
+            return replaced 
+                  
+
       def mine_block( self ):
       
+            print('In mine block, Resolve Conflicts =====>>> ' , self.resolve_conflicts )
+            if self.resolve_conflicts:
+                  return Error.get_error_object( '409', 'Resolved conflict before you mine a new Block !')
+
             if self.hosting_node_id == None:
                   print( 'Cannot mine the block for invalid sender, Did you generated Wallet? ' )
 
@@ -191,31 +264,105 @@ class Blockchain:
             block = Block( len( self.__chain ), hashed_block, copied_transactions, proof )
             
             self.__chain.append( block )
-            
-            # Clear all the open transactions as we mined the block
-            #open_transactions = []
-            # Save the data into file for further use
-            #save_data()
-
-            Verification.valid_proof( self.__open_transactions, hashed_block, proof )
-
             self.__open_transactions = []
             # Save data in a file.
             self.save_data()
 
-            #return True
+            print('In mine block data has been saved successfully, Starting broadcast now !!! ')
+
+            # Let's inform other nodes for this mining using broadcasting a block
+            for node in self.__peer_nodes:
+                  try:
+                        url = 'http://{}/broadcast_block'.format( node )
+                        converted_block = block.__dict__.copy()
+                        converted_block['transactions'] = [ tx.__dict__ for tx in converted_block['transactions'] ]
+                        
+                        print('Bradcasting mined block on ===>>> ' , url )
+                        input = {
+                              'block' : converted_block
+                        }
+                        response = requests.post( url, json={'block': converted_block} )
+
+                        if response.status_code == 400 or response.status_code == 500:
+                              print( 'Error:::Error in mine block for borading casting is ', response )
+                        if response.status_code == 201:
+                              print( '*** Mined Block broadcasted successfully ***' )  
+                        
+                        if response.status_code == 409:
+                              print( '*** We need to resolve config which might caused due to earlier node network block missmatch...' )
+                              self.resolve_conflicts = True
+
+
+                  except ConnectionError:
+                        print('Error connection a node server ', node )
+
+            print('Mine Block Broadcasting completed....')
+
             return block
 
 
-      def get_balance( self ):
+      # Here you will get new block from rest api will be in directory form so you have convert into object form
+      def add_block( self, block ):
 
-            if self.hosting_node_id == None:
+            print('Adding new block received from broadcasting,...')
+
+            if not block:
+                  return Error.get_error_object( 400, 'Cannot add empty block!') 
+
+            transactions = [ Transaction( tx['sender'], tx['recipient'], tx['amount'], tx['signature'] ) for tx in block['transactions'] ]
+            
+            print( 'Previous Hash == ' , block['previous_hash'] )
+            print( 'Proof == ' , block['proof'] )
+
+            # We need to exclude last transaction of minner that we are not using while generating proof 
+            is_valid_proof = Verification.valid_proof( transactions[:-1], block['previous_hash'], block['proof'] )
+            print( 'Is Proof Valid ?? ', is_valid_proof )
+
+            is_hash_valid = block['previous_hash'] == hash_block( self.get_chain()[-1] )
+            print( 'Is Hash valid ?? ' , is_hash_valid )
+
+            if not is_hash_valid or not is_valid_proof:
+                  return False
+
+            # Convert directory block received from rest api into Block object
+            new_block = Block( block['index'], 
+                               block['previous_hash'], 
+                               transactions, 
+                               block['proof'], 
+                               block['timestamp'] )
+            print( 'Appending new block == ' , new_block )
+            self.__chain.append( new_block )
+            
+            # We are adding new broadcasted block but when it was mine by original sender open transactions were cleared out.
+            # Same way here also we have to cleared out the open transactions if any before we add this new mined block.
+            
+            stored_trans = self.__open_transactions[:]
+
+            for o_tx in transactions:
+                  for s_tx in stored_trans:
+                        if o_tx.sender == s_tx.sender and o_tx.recipient == s_tx.recipient and o_tx.amount == s_tx.amount and o_tx.signature == s_tx.signature:
+                              try:
+                                    self.__open_transactions.remove( s_tx )
+                              except:
+                                    print('Item/Transction was already removed!')
+
+            self.save_data()
+
+            print( 'New block added and saved successfully...' )
+            return True
+      
+
+      def get_balance( self, sender ):
+
+            #if self.hosting_node_id == None:
+            if sender == None:
                   error = Error()
                   error.message = 'Invalid public_key (sender)'
                   error.code = 'INVALID_SENDER'
                   return error
 
-            participant = self.hosting_node_id
+            #participant = self.hosting_node_id
+            participant = sender
             print( 'Getting balance for ' , participant )
 
             sender_data = [ [ tx.amount for tx in block.transactions if tx.sender == participant ] for block in self.__chain ]
@@ -256,6 +403,21 @@ class Blockchain:
             return amount_received - amount_tobe_sent
 
 
+      def add_peer_node( self, node ):
+
+            self.__peer_nodes.add( node )
+            self.save_data()
+
+
+      def remove_peer_node( self, node ):
+
+            self.__peer_nodes.discard( node )
+            self.save_data()
+
+
+      def get_peer_nodes( self ):
+
+            return list( self.__peer_nodes )
 
 
 

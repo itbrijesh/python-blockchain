@@ -8,8 +8,7 @@ from error import Error
 
 
 app = Flask( __name__ )
-wallet = Wallet()
-blockchain = Blockchain( wallet.public_key )
+blockchain = None
 CORS( app )
 
 @app.route( '/test', methods=['GET'] )
@@ -21,9 +20,6 @@ def get_ui():
 @app.route( '/chain', methods=['GET'] )
 def get_chain():
       print( 'Fetching blockchain data...' )
-      
-      global blockchain
-      blockchain = Blockchain( wallet.public_key )
       
       dict_chain = [ block.__dict__.copy() for block in blockchain.get_chain() ]
 
@@ -38,10 +34,11 @@ def get_chain():
 
 @app.route( '/mine', methods=['POST'])
 def mine_block():
-      blockchain = Blockchain( wallet.public_key )
+
+      print( 'REST API - mine >>>>> Consflicts ? (before) ' , blockchain.resolve_conflicts )
       output = blockchain.mine_block()
-      print( 'In mine block output is ' , output )
       print( 'Is error ?? ' , (isinstance(output, Error)) )
+      print( 'REST API - mine >>>>> Consflicts ? (after) ' , blockchain.resolve_conflicts )
 
       if isinstance( output, Error ):
             return jsonify( output.__dict__ ), 500
@@ -62,12 +59,12 @@ def create_keys():
 
       else:
             global blockchain
-            blockchain = Blockchain( wallet.public_key )
+            blockchain = Blockchain( wallet.public_key, port )
 
             response ={
                   'public_key' : wallet.public_key,
                   'private_key': wallet.private_key,
-                  'funds' : blockchain.get_balance()
+                  'funds' : blockchain.get_balance( wallet.public_key )
             }
 
             return jsonify( response ), 201
@@ -82,12 +79,12 @@ def load_keys():
 
       else:
             global blockchain
-            blockchain = Blockchain( wallet.public_key )
+            blockchain = Blockchain( wallet.public_key, port )
 
             response ={
                   'public_key' : wallet.public_key,
                   'private_key': wallet.private_key,
-                  'funds' : blockchain.get_balance()
+                  'funds' : blockchain.get_balance( wallet.public_key )
             }
 
             return jsonify( response ), 201
@@ -95,7 +92,7 @@ def load_keys():
 @app.route( '/balance', methods=['GET'])
 def get_balance():
       
-      output = blockchain.get_balance()
+      output = blockchain.get_balance( wallet.public_key )
 
       if isinstance( output, Error ):
             return jsonify( output.__dict__ ), 500
@@ -138,7 +135,7 @@ def add_transaction():
             success = blockchain.add_transaction( recipient, wallet.public_key, amount, signature )
 
             if isinstance( success, Error ):
-                  return jsonify( error ), 500
+                  return jsonify( error.__dict__ ), 500
             
             response = {
                   'message' : 'Transaction added succesfully !',
@@ -150,6 +147,83 @@ def add_transaction():
 
             return jsonify( response ), 200
       
+
+@app.route( '/broadcast_transaction', methods=['POST'] )
+def broadcast_transaction():
+      values = request.get_json()
+
+      if not values:
+            return jsonify( Error.get_no_data_found_error().__dict__ ), 400
+
+      required = [ 'sender', 'recipient', 'amount', 'signature' ]
+
+      if not all( key in values for key in required ):
+            return jsonify ( Error.get_error_object( 400, 'Missing required/mandatory attributes !' ).__dict__ ), 400
+
+      success = blockchain.add_transaction( values['recipient'], values['sender'], values['amount'], values['signature'], is_receiving=True )
+
+      if isinstance( success, Error ):
+            return jsonify( Error.get_error_object(500, 'Transaction has not been verified/added !').__dict__  ), 500
+              
+      response = {
+            'message' : 'Transaction added succesfully !',
+            'sender' : values['sender'],
+            'recipient' : values['recipient'] ,
+            'amount' : values['amount'],
+            'signature' : values['signature']
+      }
+
+      return jsonify( response ), 200
+
+
+@app.route( '/broadcast_block', methods=['POST'])
+def boradcast_block():
+      print('-'*100)
+      print('Inside broadcasting block,...')
+      values = request.get_json()
+
+      print( 'DATA ==>> ' , values )
+
+      if not values:
+            return jsonify( Error.get_no_data_found_error().__dict__ ), 400
+
+      if 'block' not in values:
+            return jsonify ( Error.get_error_object( 400, 'Missing required/mandatory attributes !' ).__dict__ ), 400
+     
+      block = values['block']
+
+      print( 'New block index = ' , block['index'] , ' , Existing block index = ', blockchain.get_chain()[-1].index )
+      # New block index is 7 and current block index is 6, so we have to add that block
+      if block['index'] == blockchain.get_chain()[-1].index + 1:
+            print( 'We need to add a new block.' )
+            success = blockchain.add_block( block )
+            # We got some erro
+            if isinstance( success, Error ):
+                  return jsonify( success ), 500
+            # We got False value due to hash or proof invalid
+            if not success:
+                  return jsonify( { 'error': 'Hash or Proof is invalid while adding new block.' } ), 500
+            # We got True value and block added successfully
+            response = {
+                  'message' : 'New mined block added successfully !'
+            }
+            print( blockchain.get_chain() )
+            return jsonify( response ), 201
+            
+      elif block['index'] > blockchain.get_chain()[-1].index + 1:
+            print( 'My block is smaller than coming block, that means issue from my side and i have to resolve. You are good.' )
+            response = {
+                  'message' : 'My block is smaller than coming block, that means issue from my side and i have to resolve. You are good.',
+                  'code' : 200
+            }
+            return jsonify ( response ), 200
+      else:
+            print( 'Need to resolve the conflict... Looks like earlier we had 200 response as coming chain was valid, ',
+            'but not got a chance correct myself so now while i am mining i have to resolve this...' )
+            return jsonify( Error.get_error_object( 409, 'My block is smaller than coming block!' ).__dict__ ), 409
+
+
+
 
 @app.route( '/trans', methods=['GET'] )
 def get_open_transactions():
@@ -169,9 +243,91 @@ def get_open_transactions():
       return jsonify( transactions_dict ), 200
 
 
+@app.route( '/node', methods=['POST'] )
+def add_peer_node():
+      values = request.get_json()
+
+      if not values:
+            error = Error()
+            error.code = 400
+            error.message = 'No data to retrive from request !'
+            return jsonify( error.__dict__ )
+
+      if 'node' not in values:
+            error = Error()
+            error.code = 400
+            error.message = 'Data found but mandatory attribute node has not supplied !'
+            return jsonify( error.__dict__ )
+
+      blockchain.add_peer_node( values['node'] )
+
+      response = {
+            'message' : 'Node added successfully',
+            'nodes' : blockchain.get_peer_nodes()
+      }
+
+      return jsonify( response ), 200
+
+
+@app.route( '/nodes', methods=['GET'] )
+def get_peer_nodes():
+
+      nodes = blockchain.get_peer_nodes()
+
+      if not nodes :
+            return jsonify( Error.get_error_object(400, 'No Data Found !').__dict__ ), 400
+
+      response = {
+            'message' : 'Peer nodes fetched successfully.',
+            'nodes' : blockchain.get_peer_nodes()
+      }
+
+      return jsonify( response ), 200
+
+
+@app.route( '/node/<node_id>', methods=['DELETE'] )
+def delete_peer_node(node_id):
+      print( 'Node going to be delete is ', node_id )
+      blockchain.remove_peer_node( node_id )
+
+      response = {
+            'nodes' : blockchain.get_peer_nodes()
+      }
+      return jsonify( response ), 200
+
+
+@app.route( '/resolve', methods=['POST'] )
+def resolve():
+
+      success = blockchain.resolve()
+
+      if success:
+            response = {
+                  'message' : 'Chain has been replaced successfully.'
+            }
+            return jsonify( response ), 200
+
+      response = {
+            'message' : 'Chain has not been replaced.'
+      }
+
+      return jsonify( response ), 200
+
+
 # Setting up the server
 if __name__ == '__main__':
-      app.run( host='127.0.0.1', port=2000 )
+
+      from argparse import ArgumentParser
+      parser = ArgumentParser()
+      parser.add_argument( '-p', '--port' , type=int, default=2000) # Register input arguments
+      
+      args = parser.parse_args()
+      port = args.port
+
+      wallet = Wallet( port )
+      blockchain = Blockchain( wallet.public_key, port )
+
+      app.run( host='127.0.0.1', port=port )
 
 
 
